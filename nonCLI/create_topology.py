@@ -38,7 +38,8 @@ TEMPLATES = {
     "nat":    "NAT",
     "switch": "Ethernet‑sw12",
     "router": "OpenWrt 23.05.0",
-    "host":   "Alpine Linux",
+    "client": "client",
+    "server": "server",
 }
 
 # Four central hosts (10.10.0.1–10.10.0.4)
@@ -103,7 +104,7 @@ def main():
             project_id=proj.project_id,
             connector=connector,
             name=name,
-            template=TEMPLATES["host"],
+            template=TEMPLATES["server"],
             x=0, y=150 + idx*100,
             properties={
                 "adapters": 1,
@@ -151,7 +152,7 @@ def main():
                 project_id=proj.project_id,
                 connector=connector,
                 name=f"H{sub}_{j}",
-                template=TEMPLATES["host"],
+                template=TEMPLATES["client"],
                 x=rx + 200, y=ry + (j-2)*100,
                 properties={
                     "adapters": 1,
