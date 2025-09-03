@@ -1,52 +1,90 @@
-# control_server.py
 import socket
 import threading
+import datetime
+import json
 
-HOST = "0.0.0.0"
 PORT = 9000
-clients = []
+DATA_DIR = "data"
 
-def handle_client(conn, addr):
-    print(f"[+] Node connected: {addr}")
-    clients.append(conn)
-    try:
-        while True:
-            data = conn.recv(1024)
-            if not data:
-                break
-            print(f"[{addr}] {data.decode()}")
-    except:
-        pass
-    finally:
-        clients.remove(conn)
-        conn.close()
+clients = {}
 
-def broadcast_command(cmd: str):
-    print(f"[*] Sending command: {cmd}")
-    for conn in clients:
-        try:
-            conn.sendall(cmd.encode())
-        except:
-            pass
+simulating = False
+current_sim = None
+
+def broadcast(sock, packet):
+    raw_packet = json.dumps(packet)
+
+    for addr in clients:
+        sock.sendto(raw_packet, addr)
+
+def send_ack(sock, addr):
+    packet = {"type": "ack"}
+    raw_packet = json.dumps(packet)
+    
+    sock.sendto(raw_packet, addr)
+
+def server(sock):
+    while True:
+        data, addr = sock.recvfrom(1024)
+
+        packet = json.loads(data)
+        packet_type = packet["type"]
+
+        if packet_type == "join":
+            clients[addr] = {"role":packet["role"]}
+
+            print(f"[+] Node {addr} joined")
+        elif packet_type == "leave":
+            del clients[addr]
+
+            print(f"[-] Node {addr} left")
+        elif packet_type == "data_begin":
+            clients[addr]["data_stream"] = open(f"{current_sim}/{addr}.pcap", "w")
+
+            send_ack(sock, addr)
+        elif packet_type == "data_segment":
+            stream = clients[addr]["data_stream"]
+            data = packet["data"]
+
+            stream.write(data)
+
+            send_ack(sock, addr)
+        elif packet_type == "data_end":
+            stream = clients[addr]["data_stream"]
+            stream.close()
+
+            del clients[addr]["data_stream"]
+
+            send_ack(sock, addr)
 
 def main():
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind((HOST, PORT))
-    server.listen(5)
-    print(f"[+] Control server running on {HOST}:{PORT}")
+    global simulating
+    global current_sim
+    
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(("0.0.0.0", PORT))
 
-    threading.Thread(target=accept_loop, args=(server,), daemon=True).start()
+    server_thread = threading.Thread(target=server, args=(sock,), daemon=True)
+    server_thread.start()
+
+    print(f"[*] Listening for connections on 0.0.0.0:{PORT}")
 
     while True:
-        cmd = input("Enter command (START/STOP/COLLECT/EXIT): ").strip().upper()
-        if cmd == "EXIT":
-            break
-        broadcast_command(cmd)
+        cmd = input("[!] Enter a command (start/stop): ")
 
-def accept_loop(server):
-    while True:
-        conn, addr = server.accept()
-        threading.Thread(target=handle_client, args=(conn, addr), daemon=True).start()
+        packet = {"type": cmd}
+
+        if cmd == "start" and not simulating:
+            simulating = True
+            current_sim = datetime.datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+
+            print(f"[*] Started simulation at {current_sim}")
+        elif cmd == "stop" and simulating:
+            simulating = False
+            
+            print(f"[*] Stopped simulation; collecting data into ./{current_sim}/")
+
+        broadcast(sock, packet)
 
 if __name__ == "__main__":
     main()
