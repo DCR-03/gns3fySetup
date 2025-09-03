@@ -34,6 +34,8 @@ def server(sock):
             clients[addr] = {"role":packet["role"]}
 
             print(f"[+] Node {addr} joined")
+
+            send_ack(sock, addr)
         elif packet_type == "leave":
             del clients[addr]
 
