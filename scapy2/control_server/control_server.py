@@ -16,13 +16,13 @@ def broadcast(sock, packet):
     raw_packet = json.dumps(packet)
 
     for addr in clients:
-        sock.sendto(raw_packet, addr)
+        sock.sendto(raw_packet.encode('utf-8'), addr)
 
 def send_ack(sock, addr):
     packet = {"type": "ack"}
     raw_packet = json.dumps(packet)
     
-    sock.sendto(raw_packet, addr)
+    sock.sendto(raw_packet.encode('utf-8'), addr)
 
 def server(sock):
     while True:

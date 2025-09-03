@@ -7,7 +7,7 @@ import time
 import json
 import uuid
 
-CONTROL_HOST = "10.10.0.1:9000"
+CONTROL_HOST = ("10.10.0.1", 9000)
 
 TARGET_SERVER_IP = "10.10.0.2"
 TARGET_SERVER_PORT = 8080
@@ -16,6 +16,15 @@ CLIENT_PORT = 10000
 CLIENT_ID = str(uuid.uuid4())
 
 simulating = False
+
+def await_ack(sock):
+    while True:
+        data, addr = sock.recvfrom(1024)
+
+        packet = json.loads(data)
+
+        if packet["type"] == "ack":
+            break
 
 def random_string(n=8):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=n))
@@ -33,7 +42,7 @@ def spoof_traffic():
             ip = IP(src=f"10.10.1.{rand_ip}", dst=TARGET_SERVER_IP)
             udp = UDP(sport=CLIENT_PORT, dport=TARGET_SERVER_PORT)
 
-            spoofed_packet = ip / udp / raw_packet
+            spoofed_packet = ip / udp / raw_packet.encode('utf-8')
 
             print("[*] Sending spoofed packet:")
             spoofed_packet.show()
@@ -61,7 +70,7 @@ def send_captures(sock):
     begin_packet = {"type":"data_begin"}
     raw_begin_packet = json.dumps(begin_packet)
 
-    sock.sendto(raw_begin_packet, CONTROL_HOST)
+    sock.sendto(raw_begin_packet.encode('utf-8'), CONTROL_HOST)
 
     # transfer
     with open("capture.pcap", "rb") as f:
@@ -74,7 +83,7 @@ def send_captures(sock):
             packet = {"type":"data_segment","data":chunk}
             raw_packet = json.dumps(packet)
 
-            sock.sendto(raw_packet, CONTROL_HOST)
+            sock.sendto(raw_packet.encode('utf-8'), CONTROL_HOST)
 
             while True:
                 data, addr = sock.recvfrom(1024)
@@ -88,7 +97,7 @@ def send_captures(sock):
     end_packet = {"type":"data_end"}
     raw_end_packet = json.dumps(end_packet)
 
-    sock.sendto(raw_end_packet, CONTROL_HOST)
+    sock.sendto(raw_end_packet.encode('utf-8'), CONTROL_HOST)
 
 def main():
     global simulating
@@ -100,7 +109,13 @@ def main():
     packet = {"type":"join", "role":"adversary"}
     raw_packet = json.dumps(packet)
 
-    sock.sendto(raw_packet, CONTROL_HOST)
+    sock.sendto(raw_packet.encode('utf-8'), CONTROL_HOST)
+
+    print("[*] Joining simulation network...")
+
+    await_ack(sock)
+
+    print("[*] Joined simulation network")
 
     # simulation thread
     sim_thread = threading.Thread(target=spoof_traffic, daemon=True)

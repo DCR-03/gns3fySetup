@@ -7,13 +7,22 @@ import string
 import json
 from scapy.all import sniff, wrpcap
 
-CONTROL_HOST = "10.10.0.1:9000"
-SERVER_HOST = "10.10.0.2:8080"
+CONTROL_HOST = ("10.10.0.1", 9000)
+SERVER_HOST = ("10.10.0.2", 8080)
 
 CLIENT_PORT = 9000
 CLIENT_ID = str(uuid.uuid4())
 
 simulating = False
+
+def await_ack(sock):
+    while True:
+        data, addr = sock.recvfrom(1024)
+
+        packet = json.loads(data)
+
+        if packet["type"] == "ack":
+            break
 
 def random_string(n=8):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=n))
@@ -26,7 +35,7 @@ def simulate_traffic(sock):
             packet = {"type":"traffic", "data":f"{CLIENT_ID}-{random_string()}"}
             raw_packet = json.dumps(packet)
             
-            sock.sendto(raw_packet, SERVER_HOST)
+            sock.sendto(raw_packet.encode('utf-8'), SERVER_HOST)
 
             print("[*] Sent traffic")
 
@@ -51,7 +60,7 @@ def send_captures(sock):
     begin_packet = {"type":"data_begin"}
     raw_begin_packet = json.dumps(begin_packet)
 
-    sock.sendto(raw_begin_packet, CONTROL_HOST)
+    sock.sendto(raw_begin_packet.encode('utf-8'), CONTROL_HOST)
 
     # transfer
     with open("capture.pcap", "rb") as f:
@@ -64,7 +73,7 @@ def send_captures(sock):
             packet = {"type":"data_segment","data":chunk}
             raw_packet = json.dumps(packet)
 
-            sock.sendto(raw_packet, CONTROL_HOST)
+            sock.sendto(raw_packet.encode('utf-8'), CONTROL_HOST)
 
             while True:
                 data, addr = sock.recvfrom(1024)
@@ -78,7 +87,7 @@ def send_captures(sock):
     end_packet = {"type":"data_end"}
     raw_end_packet = json.dumps(end_packet)
 
-    sock.sendto(raw_end_packet, CONTROL_HOST)
+    sock.sendto(raw_end_packet.encode('utf-8'), CONTROL_HOST)
 
 def main():
     global simulating
@@ -90,7 +99,13 @@ def main():
     packet = {"type":"join", "role":"client"}
     raw_packet = json.dumps(packet)
 
-    sock.sendto(raw_packet, CONTROL_HOST)
+    sock.sendto(raw_packet.encode('utf-8'), CONTROL_HOST)
+
+    print("[*] Joining simulation network...")
+
+    await_ack(sock)
+
+    print("[*] Joined simulation network")
 
     # simulation thread
     sim_thread = threading.Thread(target=simulate_traffic, args=(sock,), daemon=True)

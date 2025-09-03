@@ -3,10 +3,19 @@ import threading
 import json
 from scapy.all import sniff, wrpcap
 
-CONTROL_HOST = "10.10.0.1:9000"
+CONTROL_HOST = ("10.10.0.1", 9000)
 PORT = 8080
 
 simulating = False
+
+def await_ack(sock):
+    while True:
+        data, addr = sock.recvfrom(1024)
+
+        packet = json.loads(data)
+
+        if packet["type"] == "ack":
+            break
 
 def capture_traffic():
     global simulating
@@ -23,7 +32,7 @@ def send_captures(sock):
     begin_packet = {"type":"data_begin"}
     raw_begin_packet = json.dumps(begin_packet)
 
-    sock.sendto(raw_begin_packet, CONTROL_HOST)
+    sock.sendto(raw_begin_packet.encode('utf-8'), CONTROL_HOST)
 
     # transfer
     with open("capture.pcap", "rb") as f:
@@ -36,7 +45,7 @@ def send_captures(sock):
             packet = {"type":"data_segment","data":chunk}
             raw_packet = json.dumps(packet)
 
-            sock.sendto(raw_packet, CONTROL_HOST)
+            sock.sendto(raw_packet.encode('utf-8'), CONTROL_HOST)
 
             while True:
                 data, addr = sock.recvfrom(1024)
@@ -50,7 +59,7 @@ def send_captures(sock):
     end_packet = {"type":"data_end"}
     raw_end_packet = json.dumps(end_packet)
 
-    sock.sendto(raw_end_packet, CONTROL_HOST)
+    sock.sendto(raw_end_packet.encode('utf-8'), CONTROL_HOST)
 
 def main():
     global simulating
@@ -62,7 +71,13 @@ def main():
     packet = {"type":"join", "role":"server"}
     raw_packet = json.dumps(packet)
 
-    sock.sendto(raw_packet, CONTROL_HOST)
+    sock.sendto(raw_packet.encode('utf-8'), CONTROL_HOST)
+
+    print("[*] Joining simulation network...")
+
+    await_ack(sock)
+
+    print("[*] Joined simulation network")
 
     # capture thread
     capture_thread = threading.Thread(target=capture_traffic, daemon=True)
@@ -87,7 +102,7 @@ def main():
             packet = {"type":"echo", "data":packet["data"]}
             raw_packet = json.dumps(packet)
 
-            sock.sendto(addr, raw_packet)
+            sock.sendto(raw_packet.encode('utf-8'), addr)
 
 if __name__ == "__main__":
     main()
