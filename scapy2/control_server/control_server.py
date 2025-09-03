@@ -2,6 +2,7 @@ import socket
 import threading
 import datetime
 import json
+import os
 
 PORT = 9000
 DATA_DIR = "data"
@@ -41,7 +42,15 @@ def server(sock):
 
             print(f"[-] Node {addr} left")
         elif packet_type == "data_begin":
-            clients[addr]["data_stream"] = open(f"{current_sim}/{addr}.pcap", "w")
+            role = clients[addr]["role"]
+
+            file_path = f"{current_sim}/{role}-{addr}.pcap"
+            dir_path = os.path.dirname(file_path)
+
+            if not os.path.exists(dir_path):
+                os.makedirs(dir_path)
+            
+            clients[addr]["data_stream"] = open(file_path, "w")
 
             send_ack(sock, addr)
         elif packet_type == "data_segment":
