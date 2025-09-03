@@ -6,7 +6,6 @@ COPY server_node.py /app/server_node.py
 
 RUN pip install --no-cache-dir scapy requests
 
-EXPOSE 9000   # For control plane
-EXPOSE 8080   # For HTTP server
+EXPOSE 8080
 
 CMD ["python", "server_node.py"]

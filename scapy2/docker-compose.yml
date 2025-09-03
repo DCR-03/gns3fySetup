@@ -1,0 +1,63 @@
+version: "3.9"
+
+services:
+  controlserver:
+    build: ./ControlServer
+    container_name: controlserver
+    networks:
+      simnet:
+        ipv4_address: 10.10.0.1
+    ports:
+      - "9000:9000"   # Expose control port for external client connections
+
+  servernode:
+    build: ./ServerNode
+    container_name: servernode
+    networks:
+      simnet:
+        ipv4_address: 10.10.0.2
+    depends_on:
+      - controlserver
+    ports:
+      - "8080:8080"
+
+  clientnode:
+    build: ./ClientNode
+    container_name: clientnode
+    networks:
+      simnet:
+        ipv4_address: 10.10.1.2
+    depends_on:
+      - controlserver
+      - servernode
+
+  routernode:
+    build: ./Router
+    container_name: routernode
+    networks:
+      simnet:
+        ipv4_address: 10.10.1.1
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    depends_on:
+      - controlserver
+
+  adversarynode:
+    build: ./Adversary
+    container_name: adversarynode
+    networks:
+      simnet:
+        ipv4_address: 10.10.1.3
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    depends_on:
+      - controlserver
+
+networks:
+  simnet:
+    ipam:
+      config:
+        - subnet: 10.10.0.0/16
+

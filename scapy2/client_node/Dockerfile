@@ -6,6 +6,6 @@ COPY client_node.py /app/client_node.py
 
 RUN pip install --no-cache-dir scapy requests
 
-EXPOSE 9000  # For control plane
+EXPOSE 9000
 
 CMD ["python", "client_node.py"]
