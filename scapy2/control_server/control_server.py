@@ -44,7 +44,7 @@ def server(sock):
         elif packet_type == "data_begin":
             role = clients[addr]["role"]
 
-            file_path = f"{current_sim}/{role}-{addr}.pcap"
+            file_path = f"{DATA_DIR}/{current_sim}/{role}-{addr}.pcap"
             dir_path = os.path.dirname(file_path)
 
             if not os.path.exists(dir_path):
