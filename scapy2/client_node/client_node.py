@@ -1,5 +1,6 @@
 import socket
 import threading
+import time
 import uuid
 import random
 import string
@@ -26,6 +27,14 @@ def simulate_traffic(sock):
             raw_packet = json.dumps(packet)
             
             sock.sendto(raw_packet, SERVER_HOST)
+
+            print("[*] Sent traffic")
+
+            wait_time = random.randint(2,4)
+
+            print(f"[*] Sleeping for {wait_time} seconds...")
+
+            time.sleep(random.randint(2,4))
 
 def capture_traffic():
     global simulating
