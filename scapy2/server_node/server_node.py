@@ -10,12 +10,17 @@ simulating = False
 
 def await_ack(sock):
     while True:
-        data, addr = sock.recvfrom(1024)
+        try:
+            data, addr = sock.recvfrom(1024)
 
-        packet = json.loads(data)
+            packet = json.loads(data)
 
-        if packet["type"] == "ack":
-            break
+            if packet["type"] == "ack":
+                return True
+        except socket.timeout:
+            return False
+        finally:
+            return False
 
 def capture_traffic():
     global simulating
@@ -71,11 +76,15 @@ def main():
     packet = {"type":"join", "role":"server"}
     raw_packet = json.dumps(packet)
 
-    sock.sendto(raw_packet.encode('utf-8'), CONTROL_HOST)
+    sock.settimeout(1)
 
-    print("[*] Joining simulation network...")
+    while True:
+        sock.sendto(raw_packet.encode('utf-8'), CONTROL_HOST)
 
-    await_ack(sock)
+        print("[*] Joining simulation network...")
+
+        if await_ack(sock):
+            break
 
     print("[*] Joined simulation network")
 
