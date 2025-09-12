@@ -8,6 +8,12 @@ docker build -t router ./router
 docker build -t adversary ./adversary
 ```
 
+Export docker images to .tar:
+
+```
+docker save -o IMAGE.tar IMAGE
+```
+
 When running the `router` and `adversary` docker images, run with the following flags:
 
 ```
